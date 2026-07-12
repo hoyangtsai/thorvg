@@ -248,11 +248,21 @@ bool WgRenderer::preRender()
 
 bool WgRenderer::renderShape(RenderData data)
 {
-    WgPaintTask* paintTask = new WgPaintTask((WgRenderDataPaint*)data, mBlendMethod);
+    auto renderData = (WgRenderDataShape*)data;
     WgSceneTask* sceneTask = mSceneTaskStack.last();
+
+    if (WgSolidBatchTask::eligible(renderData, mBlendMethod)) {
+        if (!sceneTask->children.empty() && sceneTask->children.last()->appendSolid(renderData)) return true;
+
+        auto batchTask = new WgSolidBatchTask(renderData);
+        sceneTask->children.push(batchTask);
+        mRenderTaskList.push(batchTask);
+        return true;
+    }
+
+    WgPaintTask* paintTask = new WgPaintTask(renderData, mBlendMethod);
     sceneTask->children.push(paintTask);
     mRenderTaskList.push(paintTask);
-    mCompositor.requestShape((WgRenderDataShape*)data);
     return true;
 }
 
@@ -263,13 +273,15 @@ bool WgRenderer::renderImage(RenderData data)
     WgSceneTask* sceneTask = mSceneTaskStack.last();
     sceneTask->children.push(paintTask);
     mRenderTaskList.push(paintTask);
-    mCompositor.requestImage((WgRenderDataPicture*)data);
     return true;
 }
 
 
 bool WgRenderer::postRender()
 {
+    WgSceneTask* sceneTaskRoot = mSceneTaskStack.last();
+    sceneTaskRoot->stage(mCompositor);
+
     // flush stage data to gpu
     mCompositor.flush(mContext);
 
@@ -277,7 +289,6 @@ bool WgRenderer::postRender()
     WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
 
     // run rendering (all the fun is here)
-    WgSceneTask* sceneTaskRoot = mSceneTaskStack.last();
     sceneTaskRoot->run(mContext, mCompositor, commandEncoder);
 
     // execute and release command encoder
@@ -475,6 +486,7 @@ bool WgRenderer::beginComposite(RenderCompositor* cmp, MaskMethod method, uint8_
     mRenderTargetStack.push(newRenderTarget);
     // current and new scenes
     WgSceneTask* curSceneTask = mSceneTaskStack.last();
+    curSceneTask->closeSolidBatch();
     WgSceneTask* newSceneTask = new WgSceneTask(newRenderTarget, compose, curSceneTask);
     // setup masking and blending scenes configuration
     if ((compose->flags & (tvg::Blending | tvg::Masking)) == (tvg::Blending | tvg::Masking)) {
@@ -586,7 +598,9 @@ bool WgRenderer::region(RenderEffect* effect)
 
 bool WgRenderer::render(RenderCompositor* cmp, const RenderEffect* effect, TVG_UNUSED bool direct)
 {
-    mSceneTaskStack.last()->effect = effect;
+    auto sceneTask = mSceneTaskStack.last();
+    sceneTask->closeSolidBatch();
+    sceneTask->effect = effect;
     return true;
 }
 

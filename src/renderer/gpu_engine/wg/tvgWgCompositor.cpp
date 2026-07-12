@@ -285,6 +285,28 @@ void WgCompositor::requestImage(WgRenderDataPicture* renderData)
 }
 
 
+void WgCompositor::requestSolidBatch(const Array<WgRenderDataShape*>& renderDataShapes, WgSolidBatchRange& range)
+{
+    assert(renderDataShapes.count > 1);
+    stageBufferGeometry.appendSolidBatch(renderDataShapes, range);
+    range.viewport = renderDataShapes[0]->viewport;
+
+    bool first = true;
+    uint32_t colorCount = 0;
+    ARRAY_FOREACH(p, renderDataShapes) {
+        auto renderData = *p;
+        assert(renderData->renderSettingsShape.fillType == WgRenderSettingsType::Solid);
+        const uint32_t offset = stageBufferSolidColor.appendRepeated(renderData->renderSettingsShape.settings.color, renderData->meshShape.vbuffer.count);
+        if (first) {
+            range.colorOffset = static_cast<size_t>(offset) * sizeof(WgShaderTypeVec4f);
+            first = false;
+        }
+        colorCount += renderData->meshShape.vbuffer.count;
+    }
+    assert(colorCount == range.vertexCount);
+}
+
+
 void WgCompositor::renderShape(WgContext& context, WgRenderDataShape* renderData, BlendMethod blendMethod)
 {
     assert(renderData);
@@ -319,6 +341,26 @@ void WgCompositor::renderShape(WgContext& context, WgRenderDataShape* renderData
             drawStrokes(context, renderData);
         }
     }
+}
+
+
+void WgCompositor::renderSolidBatch(TVG_UNUSED WgContext& context, const WgSolidBatchRange& range)
+{
+    assert(renderPassEncoder);
+    assert(range.vertexCount > 0 && range.indexCount > 0);
+
+    const uint64_t vertexSize = static_cast<uint64_t>(range.vertexCount) * sizeof(Point);
+    const uint64_t colorSize = static_cast<uint64_t>(range.vertexCount) * sizeof(WgShaderTypeVec4f);
+    const uint64_t indexSize = static_cast<uint64_t>(range.indexCount) * sizeof(uint32_t);
+
+    wgpuRenderPassEncoderSetScissorRect(renderPassEncoder, range.viewport.x(), range.viewport.y(), range.viewport.w(), range.viewport.h());
+    wgpuRenderPassEncoderSetStencilReference(renderPassEncoder, 0);
+    wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, bindGroupViewMat, 0, nullptr);
+    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pipelines.solid_batch);
+    wgpuRenderPassEncoderSetVertexBuffer(renderPassEncoder, 0, stageBufferGeometry.vbuffer_gpu, range.vertexOffset, vertexSize);
+    wgpuRenderPassEncoderSetVertexBuffer(renderPassEncoder, 1, stageBufferSolidColor.vbuffer_gpu, range.colorOffset, colorSize);
+    wgpuRenderPassEncoderSetIndexBuffer(renderPassEncoder, stageBufferGeometry.ibuffer_gpu, WGPUIndexFormat_Uint32, range.indexOffset, indexSize);
+    wgpuRenderPassEncoderDrawIndexed(renderPassEncoder, range.indexCount, 1, 0, 0, 0);
 }
 
 

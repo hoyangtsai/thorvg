@@ -541,6 +541,46 @@ void WgStageBufferGeometry::append(WgRenderDataPicture* renderDataPicture)
 }
 
 
+void WgStageBufferGeometry::appendSolidBatch(const Array<WgRenderDataShape*>& renderDataShapes, WgSolidBatchRange& range)
+{
+    assert(renderDataShapes.count > 1);
+
+    uint64_t vertexCount = 0;
+    uint64_t indexCount = 0;
+    ARRAY_FOREACH(p, renderDataShapes) {
+        vertexCount += (*p)->meshShape.vbuffer.count;
+        indexCount += (*p)->meshShape.ibuffer.count;
+    }
+    assert(vertexCount * sizeof(Point) <= UINT32_MAX);
+    assert(indexCount * sizeof(uint32_t) <= UINT32_MAX);
+
+    const uint32_t vsize = static_cast<uint32_t>(vertexCount * sizeof(Point));
+    const uint32_t isize = static_cast<uint32_t>(indexCount * sizeof(uint32_t));
+    if (vbuffer.reserved < vbuffer.count + vsize) vbuffer.grow(std::max(vsize, vbuffer.reserved));
+    if (ibuffer.reserved < ibuffer.count + isize) ibuffer.grow(std::max(isize, ibuffer.reserved));
+
+    range.vertexOffset = vbuffer.count;
+    range.indexOffset = ibuffer.count;
+    range.vertexCount = static_cast<uint32_t>(vertexCount);
+    range.indexCount = static_cast<uint32_t>(indexCount);
+
+    uint32_t baseVertex = 0;
+    ARRAY_FOREACH(p, renderDataShapes) {
+        auto mesh = &(*p)->meshShape;
+        const uint32_t meshVSize = mesh->vbuffer.count * sizeof(Point);
+        memcpy(vbuffer.data + vbuffer.count, mesh->vbuffer.data, meshVSize);
+        vbuffer.count += meshVSize;
+
+        for (uint32_t i = 0; i < mesh->ibuffer.count; ++i) {
+            auto index = mesh->ibuffer[i] + baseVertex;
+            memcpy(ibuffer.data + ibuffer.count, &index, sizeof(index));
+            ibuffer.count += sizeof(index);
+        }
+        baseVertex += mesh->vbuffer.count;
+    }
+}
+
+
 void WgStageBufferGeometry::release(WgContext& context)
 {
     context.releaseBuffer(vbuffer_gpu);
@@ -574,6 +614,16 @@ void WgStageBufferSolidColor::release(WgContext& context)
 void WgStageBufferSolidColor::clear()
 {
     vbuffer.clear();
+}
+
+
+uint32_t WgStageBufferSolidColor::appendRepeated(const WgShaderTypeVec4f& value, uint32_t count)
+{
+    const uint32_t offset = vbuffer.count;
+    if (vbuffer.reserved < vbuffer.count + count)
+        vbuffer.grow(std::max(count, vbuffer.reserved));
+    for (uint32_t i = 0; i < count; ++i) vbuffer.data[vbuffer.count++] = value;
+    return offset;
 }
 
 

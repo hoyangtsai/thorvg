@@ -22,10 +22,19 @@
 
 #include "tvgWgRenderTask.h"
 #include <iostream>
+#include <limits>
 
 //***********************************************************************
 // WgPaintTask
 //***********************************************************************
+
+void WgPaintTask::stage(WgCompositor& compositor)
+{
+    if (renderData->type() == tvg::Type::Shape)
+        compositor.requestShape((WgRenderDataShape*)renderData);
+    else if (renderData->type() == tvg::Type::Picture)
+        compositor.requestImage((WgRenderDataPicture*)renderData);
+}
 
 void WgPaintTask::run(WgContext& context, WgCompositor& compositor, WGPUCommandEncoder encoder)
 {
@@ -37,8 +46,69 @@ void WgPaintTask::run(WgContext& context, WgCompositor& compositor, WGPUCommandE
 }
 
 //***********************************************************************
+// WgSolidBatchTask
+//***********************************************************************
+
+WgSolidBatchTask::WgSolidBatchTask(WgRenderDataShape* renderData)
+{
+    assert(eligible(renderData, BlendMethod::Normal));
+    viewport = renderData->viewport;
+    vertexCount = renderData->meshShape.vbuffer.count;
+    indexCount = renderData->meshShape.ibuffer.count;
+    shapes.push(renderData);
+}
+
+
+bool WgSolidBatchTask::eligible(const WgRenderDataShape* renderData, BlendMethod blendMethod)
+{
+    if (!renderData || blendMethod != BlendMethod::Normal) return false;
+    if (renderData->renderSettingsShape.skip || renderData->renderSettingsShape.fillType != WgRenderSettingsType::Solid) return false;
+    if (!renderData->convex || renderData->viewport.invalid() || !renderData->clips.empty()) return false;
+    if (renderData->meshShape.vbuffer.empty() || renderData->meshShape.ibuffer.empty()) return false;
+    if (!renderData->renderSettingsStroke.skip && !renderData->meshStrokes.ibuffer.empty()) return false;
+    if (renderData->meshShape.vbuffer.count > std::numeric_limits<uint32_t>::max() / sizeof(Point)) return false;
+    if (renderData->meshShape.ibuffer.count > std::numeric_limits<uint32_t>::max() / sizeof(uint32_t)) return false;
+    return true;
+}
+
+
+bool WgSolidBatchTask::appendSolid(WgRenderDataShape* renderData)
+{
+    if (closed || !eligible(renderData, BlendMethod::Normal) || !(viewport == renderData->viewport)) return false;
+
+    const uint64_t nextVertexCount = static_cast<uint64_t>(vertexCount) + renderData->meshShape.vbuffer.count;
+    const uint64_t nextIndexCount = static_cast<uint64_t>(indexCount) + renderData->meshShape.ibuffer.count;
+    if (nextVertexCount > std::numeric_limits<uint32_t>::max() / sizeof(Point)) return false;
+    if (nextIndexCount > std::numeric_limits<uint32_t>::max() / sizeof(uint32_t)) return false;
+
+    shapes.push(renderData);
+    vertexCount = static_cast<uint32_t>(nextVertexCount);
+    indexCount = static_cast<uint32_t>(nextIndexCount);
+    return true;
+}
+
+
+void WgSolidBatchTask::stage(WgCompositor& compositor)
+{
+    if (shapes.count == 1) compositor.requestShape(shapes[0]);
+    else compositor.requestSolidBatch(shapes, range);
+}
+
+
+void WgSolidBatchTask::run(WgContext& context, WgCompositor& compositor, WGPUCommandEncoder encoder)
+{
+    if (shapes.count == 1) compositor.renderShape(context, shapes[0], BlendMethod::Normal);
+    else compositor.renderSolidBatch(context, range);
+}
+
+//***********************************************************************
 // WgSceneTask
 //***********************************************************************
+
+void WgSceneTask::stage(WgCompositor& compositor)
+{
+    ARRAY_FOREACH(task, children) (*task)->stage(compositor);
+}
 
 void WgSceneTask::run(WgContext& context, WgCompositor& compositor, WGPUCommandEncoder encoder)
 {
@@ -74,6 +144,12 @@ void WgSceneTask::runChildren(WgContext& context, WgCompositor& compositor, WGPU
         // run children (shape or scene)
         renderTask->run(context, compositor, encoder);
     }
+}
+
+
+void WgSceneTask::closeSolidBatch()
+{
+    if (!children.empty()) children.last()->closeSolidBatch();
 }
 
 

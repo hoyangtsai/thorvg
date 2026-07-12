@@ -139,6 +139,16 @@ public:
     void release(WgContext& context);
 };
 
+struct WgSolidBatchRange
+{
+    size_t vertexOffset{};
+    size_t indexOffset{};
+    size_t colorOffset{};
+    uint32_t vertexCount{};
+    uint32_t indexCount{};
+    RenderRegion viewport{};
+};
+
 // gaussian blur, drop shadow, fill, tint, tritone
 #define WG_GAUSSIAN_MAX_LEVEL 3
 struct WgRenderDataEffectParams
@@ -182,6 +192,7 @@ public:
     void append(WgMeshData* meshData);
     void append(WgRenderDataShape* renderDataShape);
     void append(WgRenderDataPicture* renderDataPicture);
+    void appendSolidBatch(const Array<WgRenderDataShape*>& renderDataShapes, WgSolidBatchRange& range);
     void initialize(WgContext& context){};
     void release(WgContext& context);
     void clear();
@@ -198,6 +209,7 @@ public:
         vbuffer.push(value);
         return vbuffer.count - 1;
     }
+    uint32_t appendRepeated(const WgShaderTypeVec4f& value, uint32_t count);
 
     void release(WgContext& context);
     void clear();

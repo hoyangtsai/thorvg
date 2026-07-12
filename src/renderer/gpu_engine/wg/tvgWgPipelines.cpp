@@ -160,8 +160,11 @@ void WgPipelines::initialize(WgContext& context)
     const WGPUVertexBufferLayout vertexBufferLayoutPos { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesPos };
     // Solid path: one vec4 color per draw from an instance-rate aux vertex slot.
     const WGPUVertexBufferLayout vertexBufferLayoutColor { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 16, .attributeCount = 1, .attributes = vertexAttributesColor };
+    // Batched solid path: one vec4 color per vertex so a draw can contain multiple colors.
+    const WGPUVertexBufferLayout vertexBufferLayoutColorBatch { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 16, .attributeCount = 1, .attributes = vertexAttributesColor };
     const WGPUVertexBufferLayout vertexBufferLayoutTex { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesTex };
     const WGPUVertexBufferLayout vertexBufferLayoutsSolid[] { vertexBufferLayoutPos, vertexBufferLayoutColor };
+    const WGPUVertexBufferLayout vertexBufferLayoutsSolidBatch[] { vertexBufferLayoutPos, vertexBufferLayoutColorBatch };
     const WGPUVertexBufferLayout vertexBufferLayoutsShape[] { vertexBufferLayoutPos };
     const WGPUVertexBufferLayout vertexBufferLayoutsImage[] { vertexBufferLayoutPos, vertexBufferLayoutTex };
     const WGPUMultisampleState multisampleState   { .count = 4, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
@@ -338,6 +341,13 @@ void WgPipelines::initialize(WgContext& context)
         context.device, "The render pipeline solid",
         shader_solid, "vs_main", "fs_main",
         layout_solid, vertexBufferLayoutsSolid, 2,
+        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
+        depthStencilStateScene, multisampleState);
+    // render pipeline solid batch (no stencil, per-vertex color)
+    solid_batch = createRenderPipeline(
+        context.device, "The render pipeline solid batch",
+        shader_solid, "vs_main", "fs_main",
+        layout_solid, vertexBufferLayoutsSolidBatch, 2,
         WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
         depthStencilStateScene, multisampleState);
     // render pipeline radial (no stencil)
@@ -559,6 +569,7 @@ void WgPipelines::releaseGraphicHandles(WgContext& context)
     releaseRenderPipeline(image);
     releaseRenderPipeline(linear_conv);
     releaseRenderPipeline(radial_conv);
+    releaseRenderPipeline(solid_batch);
     releaseRenderPipeline(solid_conv);
     releaseRenderPipeline(linear);
     releaseRenderPipeline(radial);
