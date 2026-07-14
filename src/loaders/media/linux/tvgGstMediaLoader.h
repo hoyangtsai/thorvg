@@ -25,53 +25,28 @@
 
 #include "tvgMediaLoader.h"
 
+struct GstImpl;
+
 struct GstMediaLoader : MediaLoader
 {
-    GstMediaLoader() :
-        MediaLoader(FileType::Media) {}
-    ~GstMediaLoader(){};
+    GstImpl* pImpl;
 
-    Result play() override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
+    GstMediaLoader();
+    ~GstMediaLoader() override;
 
-    Result pause() override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
+    using Loader::open;   //unhide the unimplemented open() overloads
 
-    Result stop() override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
+    bool open(const char* path, const LoaderOps* ops) override;
+    bool read() override;
+    bool sync() override;
 
-    Result seek(float seconds) override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
-
-    Result loop(bool on) override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
-
-    Result volume(float volume) override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
-
-    Result mute(bool on) override
-    {
-        // TODO:
-        return Result::NonSupport;
-    }
+    Result play() override;
+    Result pause() override;
+    Result stop() override;
+    Result seek(float seconds) override;
+    Result loop(bool on) override;
+    Result volume(float volume) override;
+    Result mute(bool on) override;
 };
 
 #endif  //_TVG_GST_LOADER_H_
